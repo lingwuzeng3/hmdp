@@ -1,13 +1,13 @@
-## [黑马点评](https://github.com/lingwuzeng3/hmdp.git)
+## [黑马点评](https://www.bilibili.com/video/BV1NV411u7GE/?spm_id_from=333.337.search-card.all.click)
 
 ### day01
-短信登录业务  
+[短信登录业务](https://blog.csdn.net/qq_55926096/article/details/144827101)
 - 运用了**session**技术，记录用户验证码登信息
 - 使用**Redis**优化session，解决集群分布问题
 - 通过双重**Interceptor**进行登录校验
 
 ### day-02  
-商户信息缓存
+[商户信息缓存](https://blog.csdn.net/qq_55926096/article/details/145450099)
 - 学习了**缓存穿透**,并通过设置空字符串来解决
 - 了解了**缓存击穿**和**缓存雪崩**，缓存雪崩可以通过分散设置不同的过期时间来防止，而缓存击穿主要有两种方式
   1. 互斥锁，用redis中自带的setnx来进行串行等待保证数据的一致性，但影响性能。
