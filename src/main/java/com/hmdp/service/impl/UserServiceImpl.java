@@ -11,6 +11,7 @@ import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.UserMapper;
 import com.hmdp.service.IUserService;
+import com.hmdp.utils.MessageConstants;
 import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RegexUtils;
 import com.hmdp.utils.SystemConstants;
@@ -78,14 +79,14 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements IU
         //1.检查电话是否合格
         String phone = loginForm.getPhone();
         if(RegexUtils.isPhoneInvalid(phone)){
-            return Result.fail("无效电话号码");
+            return Result.fail(MessageConstants.UNUSE_PHONE);
         }
 
         //2.校验验证码
         String in_code = loginForm.getCode();
         String true_code = stringRedisTemplate.opsForValue().get(RedisConstants.LOGIN_CODE_KEY+phone);
         if(true_code == null || !true_code.equals(in_code)){
-            return Result.fail("无效验证码");
+            return Result.fail(MessageConstants.UNUSE_CODE);
         }
 
         //3.查看数据库是否有该用户数据
