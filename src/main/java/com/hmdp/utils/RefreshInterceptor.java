@@ -29,7 +29,7 @@ public class RefreshInterceptor implements HandlerInterceptor {
         // 1.获取请求头中的Token
         String token = request.getHeader(RedisConstants.REQUEST_HEADER_TOKEN);
         if (StrUtil.isBlank(token)) {
-            // Token不存在，但不拦截当前请求
+            // Token不存在，但不拦截当前请求，以防登录请求进不去
             return true;
         }
         // 2.根据Token获取Redis中的用户信息
