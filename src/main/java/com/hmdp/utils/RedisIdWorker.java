@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -18,7 +19,7 @@ import java.time.format.DateTimeFormatter;
 @Component
 public class RedisIdWorker {
 
-    @Autowired
+    @Resource
     private StringRedisTemplate stringRedisTemplate;
 
     //开始时间戳-11月1日

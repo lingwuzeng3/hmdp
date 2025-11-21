@@ -9,5 +9,6 @@
         FROM tb_voucher v
         LEFT JOIN  tb_seckill_voucher sv ON v.id = sv.voucher_id
         WHERE v.shop_id = #{shopId} AND v.status = 1
+        order by v.create_time desc
     </select>
 </mapper>
