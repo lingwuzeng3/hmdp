@@ -47,7 +47,7 @@ public class VoucherOrderController {
      * @return
      */
     @PostMapping("seckill/{id}")
-    public Result seckillVoucher(@PathVariable("id") Long voucherId) throws Exception {
+    public Result seckillVoucher(@PathVariable("id") Long voucherId){
 
         return voucherOrderService.robseckillVoucher(voucherId);
     }
