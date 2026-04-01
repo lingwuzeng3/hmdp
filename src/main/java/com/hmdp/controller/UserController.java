@@ -8,12 +8,13 @@ import com.hmdp.entity.User;
 import com.hmdp.entity.UserInfo;
 import com.hmdp.service.IUserInfoService;
 import com.hmdp.service.IUserService;
+import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.UserHolder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
-import javax.servlet.http.HttpSession;
+import javax.servlet.http.HttpServletRequest;
 
 /**
  * <p>
@@ -56,13 +57,12 @@ public class UserController {
     }
 
     /**
-     * 登出功能
-     * @return 无
+     * 登出功能：删除 Redis 中 login:token:{token}，客户端需清除本地 token
      */
     @PostMapping("/logout")
-    public Result logout(){
-        // TODO 实现登出功能
-        return Result.fail("功能未完成");
+    public Result logout(HttpServletRequest request) {
+        String token = request.getHeader(RedisConstants.REQUEST_HEADER_TOKEN);
+        return userService.logout(token);
     }
 
     @GetMapping("/me")

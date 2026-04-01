@@ -22,7 +22,7 @@ class HmDianPingApplicationTests {
 
     @Test
     void testShop(){
-        for(long id = 1; id <= 14; id++){
+        for(long id = 1; id <= 54; id++){
             Shop shop = shopService.getById(id);
             cacheClient.setWithLogicalExpire(RedisConstants.CACHE_SHOP_KEY+id,shop,10L,
                     TimeUnit.SECONDS);
