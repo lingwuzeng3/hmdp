@@ -17,7 +17,6 @@ import com.hmdp.utils.RedisData;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 
 import java.time.LocalDateTime;
@@ -94,6 +93,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
      * 根据id查询店铺信息--逻辑过期
      * @param id
      * @return
+     * 缓存已存在但过期 → 逻辑过期方案（异步重建）
+     * 缓存完全不存在 → 互斥锁方案（同步重建）
      */
     @Override
     public Result queryById(Long id) {
@@ -102,9 +103,10 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         String shopKey = RedisConstants.CACHE_SHOP_KEY + id;
         String shopJson = stringRedisTemplate.opsForValue().get(shopKey);
 
-        //2.若redis中不存在信息
-        if(StringUtils.isEmpty(shopJson)){
-            return Result.fail(MessageConstants.SHOP_NOT_EXIST);
+        //2.若redis中不存在信息，需要从数据库查询并构建缓存
+        if(StrUtil.isEmpty(shopJson)){
+            // 缓存击穿解决：使用互斥锁
+            return handleCacheBreakdown(id, shopKey);
         }
 
         //3.命中 反序列化
@@ -137,6 +139,70 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             });
         }
         //返回过期商铺信息
+        return Result.ok(shop);
+    }
+
+    /**
+     * 处理缓存击穿：缓存不存在时从数据库加载
+     * @param id 店铺ID
+     * @param shopKey Redis键
+     * @return 查询结果
+     */
+    private Result handleCacheBreakdown(Long id, String shopKey) {
+        String lockKey = RedisConstants.LOCK_SHOP_KEY + id;
+        try {
+            // 1. 获取互斥锁
+            boolean isLock = tryLock(lockKey);
+            if (!isLock) {
+                // 获取锁失败，休眠重试
+                Thread.sleep(50);
+                return queryById(id); // 递归查询
+            }
+            
+            // 2. 获取锁成功，再次检查缓存（双重检查）
+            String cacheData = stringRedisTemplate.opsForValue().get(shopKey);
+            if (StrUtil.isNotEmpty(cacheData)) {
+                // 其他线程已经重建了缓存
+                return buildResultFromCache(cacheData);
+            }
+            
+            // 3. 查询数据库
+            Shop shop = getById(id);
+            if (shop == null) {
+                // 数据库也不存在，缓存空值防止缓存穿透
+                stringRedisTemplate.opsForValue().set(
+                    shopKey, "", 
+                    RedisConstants.CACHE_NULL_TTL, 
+                    TimeUnit.MINUTES
+                );
+                return Result.fail(MessageConstants.SHOP_NOT_EXIST);
+            }
+            
+            // 4. 数据库存在，写入Redis（使用逻辑过期）
+            saveShopToRedis(id, 20L);
+            
+            // 5. 返回结果
+            return Result.ok(shop);
+            
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("查询店铺被中断", e);
+        } finally {
+            // 释放锁
+            unLock(lockKey);
+        }
+    }
+
+    /**
+     * 从缓存数据构建返回结果
+     * @param shopJson 缓存中的JSON字符串
+     * @return 查询结果
+     */
+    private Result buildResultFromCache(String shopJson) {
+
+        RedisData redisData = JSONUtil.toBean(shopJson, RedisData.class);
+        JSONObject jsonObject = (JSONObject) redisData.getData();
+        Shop shop = BeanUtil.toBean(jsonObject, Shop.class);
         return Result.ok(shop);
     }
 
