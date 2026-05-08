@@ -12,13 +12,15 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.MessageConstants;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.concurrent.TimeUnit;
 
 /**
  * <p>
@@ -31,12 +33,19 @@ import java.time.LocalDateTime;
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
-    @Resource
-    private ISeckillVoucherService seckillVoucherService;
-    @Resource
-    private RedisIdWorker redisIdWorker;
+    private final ISeckillVoucherService seckillVoucherService;
+    private final RedisIdWorker redisIdWorker;
+    private final RedissonClient redissonClient;
 
-    @Transactional
+    @Autowired
+    public VoucherOrderServiceImpl(ISeckillVoucherService seckillVoucherService,
+                                   RedisIdWorker redisIdWorker,
+                                   RedissonClient redissonClient) {
+        this.seckillVoucherService = seckillVoucherService;
+        this.redisIdWorker = redisIdWorker;
+        this.redissonClient = redissonClient;
+    }
+
     @Override
     public Result robseckillVoucher(Long voucherId) {
         //1.查询优惠券
@@ -51,9 +60,33 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
         //创建订单,用代理来保证嵌套事务的正常运行
         Long userId = UserHolder.getUser().getId();
-        synchronized(userId.toString().intern()){
+
+        // 使用voucherId作为锁的key，而不是userId，确保对同一张券的互斥访问
+        String lockKey = "lock:order:" + voucherId;
+        RLock lock = redissonClient.getLock(lockKey);
+        
+        // 尝试获取锁，设置等待时间和租约时间
+        boolean isLock = false;
+        try {
+            // 等待最多1秒，锁自动释放时间10秒
+            isLock = lock.tryLock(1, 10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return Result.fail("获取锁失败");
+        }
+        
+        if(!isLock){
+            return Result.fail(MessageConstants.REPEAT_BUY);
+        }
+        
+        try{
             IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
             return proxy.createVoucherOrder(userId,voucherId);
+        } finally {
+            // 只有当前线程持有锁时才释放
+            if(lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
 
     }
