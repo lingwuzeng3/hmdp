@@ -102,6 +102,8 @@ hm-dianping
    3) 单机悲观锁在分布式环境失效，只对当前 JVM 有效。
 3. synchorized 锁：单机锁，对当前 JVM 有效，但无法实现分布式锁。
 4. 使用Redisson的Rlock实现集群模式下的分布式锁，保证锁的可重入性和可重试性
+5. 使用lua脚本实现redis操作的原子性
+6. 通过redis的stream队列实现异步下单
 
 ## 运行提示
 

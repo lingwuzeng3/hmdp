@@ -15,6 +15,10 @@ public class RedisConstants {
     public static final Long LOCK_SHOP_TTL = 10L;
 
     public static final String SECKILL_STOCK_KEY = "seckill:stock:";
+    /** Hash: begin/end — Unix epoch seconds */
+    public static final String SECKILL_INFO_KEY = "seckill:info:";
+    /** Set of userId strings that have reserved a seckill slot for this voucher */
+    public static final String SECKILL_OWNERS_KEY = "seckill:owners:";
     public static final String BLOG_LIKED_KEY = "blog:liked:";
     public static final String FEED_KEY = "feed:";
     public static final String SHOP_GEO_KEY = "shop:geo:";
@@ -25,5 +29,10 @@ public class RedisConstants {
     public static final String CACHE_SHOP_TYPE_KEY = "cache:shopType:list";
 
     public static final String SECKILL_STACK_KEY = "seckill:stack";
+
+    /** 秒杀异步下单 Stream（Lua XADD + 消费者组读取） */
+    public static final String STREAM_ORDER_KEY = "stream.orders";
+    public static final String STREAM_ORDER_GROUP = "seckill-order-group";
+    public static final String STREAM_ORDER_CONSUMER = "consumer-1";
 
 }

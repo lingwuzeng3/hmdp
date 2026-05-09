@@ -6,21 +6,21 @@ import com.hmdp.dto.Result;
 import com.hmdp.entity.SeckillVoucher;
 import com.hmdp.entity.VoucherOrder;
 import com.hmdp.mapper.VoucherOrderMapper;
+import com.hmdp.script.SeckillLuaExecutor;
 import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.MessageConstants;
+import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RedisIdWorker;
 import com.hmdp.utils.UserHolder;
-import org.redisson.api.RLock;
-import org.redisson.api.RedissonClient;
 import org.springframework.aop.framework.AopContext;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import lombok.extern.slf4j.Slf4j;
 
-import java.time.LocalDateTime;
-import java.util.concurrent.TimeUnit;
+import java.time.ZoneId;
 
 /**
  * <p>
@@ -30,101 +30,117 @@ import java.util.concurrent.TimeUnit;
  * @author 虎哥
  * @since 2021-12-22
  */
+@Slf4j
 @Service
 public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, VoucherOrder> implements IVoucherOrderService {
 
     private final ISeckillVoucherService seckillVoucherService;
     private final RedisIdWorker redisIdWorker;
-    private final RedissonClient redissonClient;
+    private final SeckillLuaExecutor seckillLuaExecutor;
+    private final StringRedisTemplate stringRedisTemplate;
 
-    @Autowired
     public VoucherOrderServiceImpl(ISeckillVoucherService seckillVoucherService,
                                    RedisIdWorker redisIdWorker,
-                                   RedissonClient redissonClient) {
+                                   SeckillLuaExecutor seckillLuaExecutor,
+                                   StringRedisTemplate stringRedisTemplate) {
         this.seckillVoucherService = seckillVoucherService;
         this.redisIdWorker = redisIdWorker;
-        this.redissonClient = redissonClient;
+        this.seckillLuaExecutor = seckillLuaExecutor;
+        this.stringRedisTemplate = stringRedisTemplate;
     }
 
     @Override
     public Result robseckillVoucher(Long voucherId) {
-        //1.查询优惠券
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
-        if(voucher == null){
+        if (voucher == null) {
             return Result.fail("优惠券不存在");
         }
-        if(voucher.getStock() < 1){
-            return Result.fail(MessageConstants.STOCK_IS_NOT_ENOUGH);
-        }
-        if(voucher.getEndTime().isBefore(LocalDateTime.now()) ||
-                voucher.getBeginTime().isAfter(LocalDateTime.now())){
+        if (voucher.getBeginTime() == null || voucher.getEndTime() == null) {
             return Result.fail(MessageConstants.VOUCHER_OUT_OF_TIME);
         }
+        ensureSeckillRedisPresent(voucherId, voucher);
 
-        //创建订单,用代理来保证嵌套事务的正常运行
         Long userId = UserHolder.getUser().getId();
-
-        // 使用 userId + voucherId 作为锁的key，确保同一用户对同一券的互斥访问
-        // 这样可以防止同一用户重复下单，同时不同用户可以并发抢券
-        String lockKey = "lock:order:" + userId + ":" + voucherId;
-        RLock lock = redissonClient.getLock(lockKey);
-        
-        // 尝试获取锁，设置等待时间和租约时间
-        boolean isLock = false;
-        try {
-            // 等待最多1秒，锁自动释放时间10秒
-            isLock = lock.tryLock(1, 10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return Result.fail("获取锁失败");
+        long orderId = redisIdWorker.nextId("SECKILL_VOUCHER_ORDER");
+        Long code = seckillLuaExecutor.tryReserve(voucherId, userId, orderId);
+        if (code == null) {
+            return Result.fail(MessageConstants.SECKILL_NOT_READY);
         }
-        
-        if(!isLock){
-            return Result.fail(MessageConstants.REPEAT_BUY);
-        }
-        
-        try{
-            IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
-            return proxy.createVoucherOrder(userId,voucherId);
-        } finally {
-            // 只有当前线程持有锁时才释放
-            if(lock.isHeldByCurrentThread()) {
-                lock.unlock();
+        return switch (code.intValue()) {
+            case 1 -> Result.ok(orderId);
+            case -1 -> Result.fail(MessageConstants.VOUCHER_OUT_OF_TIME);
+            case -2 -> {
+                String ownersKey = RedisConstants.SECKILL_OWNERS_KEY + voucherId;
+                Boolean member = stringRedisTemplate.opsForSet().isMember(ownersKey, userId.toString());
+                Boolean ownersExists = stringRedisTemplate.hasKey(ownersKey);
+                log.warn(
+                        "Lua=-2 用户已抢购(一人一单 Set): voucherId={} userId={} ownersKey={} keyExists={} redisIsMember={}",
+                        voucherId, userId, ownersKey, ownersExists, member);
+                yield Result.fail(MessageConstants.REPEAT_BUY);
             }
-        }
-
+            case -3 -> Result.fail(MessageConstants.STOCK_IS_NOT_ENOUGH);
+            case -4 -> Result.fail(MessageConstants.SECKILL_NOT_READY);
+            default -> Result.fail(MessageConstants.SECKILL_NOT_READY);
+        };
     }
 
+    @Override
+    public Result createVoucherOrder(Long userId, Long voucherId) {
+        long orderId = redisIdWorker.nextId("SECKILL_VOUCHER_ORDER");
+        IVoucherOrderService proxy = (IVoucherOrderService) AopContext.currentProxy();
+        return proxy.createVoucherOrder(userId, voucherId, orderId);
+    }
+
+    @Override
     @Transactional
-    public Result createVoucherOrder(Long userId,Long voucherId) {
-        //2.判断是否第一单，一个用户同种券只能抢一张
-        int cnt = count(new QueryWrapper<VoucherOrder>().eq("user_id",userId).eq("voucher_id",voucherId));
-        if(cnt > 0){
+    public Result createVoucherOrder(Long userId, Long voucherId, Long orderId) {
+        int cnt = count(new QueryWrapper<VoucherOrder>().eq("user_id", userId).eq("voucher_id", voucherId));
+        if (cnt > 0) {
             return Result.fail(MessageConstants.REPEAT_BUY);
         }
 
-        //3.更新库存 - 使用乐观锁机制，确保原子性扣减
         boolean flag = seckillVoucherService.update(
                 new UpdateWrapper<SeckillVoucher>()
                         .eq("voucher_id", voucherId)
-                        .gt("stock", 0)  // 库存必须大于0才能扣减
+                        .gt("stock", 0)
                         .setSql("stock = stock - 1")
         );
-        if (!flag){
+        if (!flag) {
             return Result.fail(MessageConstants.STOCK_IS_NOT_ENOUGH);
         }
 
-        //4.订单持久化
-        long orderId = redisIdWorker.nextId("SECKILL_VOUCHER_ORDER");
         VoucherOrder voucherOrder = new VoucherOrder();
         voucherOrder.setId(orderId);
         voucherOrder.setVoucherId(voucherId);
         voucherOrder.setUserId(userId);
         flag = save(voucherOrder);
-        if (!flag){
+        if (!flag) {
             return Result.fail(MessageConstants.SAVE_VOUCHER_FAIL);
         }
 
         return Result.ok(orderId);
+    }
+
+    /**
+     * Lua 依赖 seckill:stock 与 seckill:info(begin/end)。仅同步库存或 Redis 被清空时会缺 info/stock，
+     * 此处按库表补齐缺失项；已存在的库存键不覆盖，避免覆盖 Lua 已扣减的计数。
+     */
+    private void ensureSeckillRedisPresent(Long voucherId, SeckillVoucher sv) {
+        String stockKey = RedisConstants.SECKILL_STOCK_KEY + voucherId;
+        String infoKey = RedisConstants.SECKILL_INFO_KEY + voucherId;
+        ZoneId zone = ZoneId.systemDefault();
+        long beginEpoch = sv.getBeginTime().atZone(zone).toEpochSecond();
+        long endEpoch = sv.getEndTime().atZone(zone).toEpochSecond();
+
+        Boolean hasStock = stringRedisTemplate.hasKey(stockKey);
+        if (Boolean.FALSE.equals(hasStock) && sv.getStock() != null) {
+            stringRedisTemplate.opsForValue().set(stockKey, sv.getStock().toString());
+        }
+        Object begin = stringRedisTemplate.opsForHash().get(infoKey, "begin");
+        Object end = stringRedisTemplate.opsForHash().get(infoKey, "end");
+        if (begin == null || end == null) {
+            stringRedisTemplate.opsForHash().put(infoKey, "begin", Long.toString(beginEpoch));
+            stringRedisTemplate.opsForHash().put(infoKey, "end", Long.toString(endEpoch));
+        }
     }
 }

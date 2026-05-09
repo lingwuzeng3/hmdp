@@ -17,4 +17,9 @@ public interface IVoucherOrderService extends IService<VoucherOrder> {
     Result robseckillVoucher(Long voucherId);
 
     Result createVoucherOrder(Long userId, Long voucherId);
+
+    /**
+     * 秒杀异步落库：orderId 须与请求路径返回给客户端的一致。
+     */
+    Result createVoucherOrder(Long userId, Long voucherId, Long orderId);
 }

@@ -13,7 +13,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.annotation.Resource;
+import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -60,7 +60,16 @@ public class VoucherServiceImpl extends ServiceImpl<VoucherMapper, Voucher> impl
         seckillVoucher.setEndTime(voucher.getEndTime());
         seckillVoucherService.save(seckillVoucher);
 
-        // 秒杀库存设置缓存
-        stringRedisTemplate.opsForValue().set(RedisConstants.SECKILL_STOCK_KEY + voucher.getId(), voucher.getStock().toString());
+        Long vid = voucher.getId();
+        ZoneId zone = ZoneId.systemDefault();
+        long beginEpoch = voucher.getBeginTime().atZone(zone).toEpochSecond();
+        long endEpoch = voucher.getEndTime().atZone(zone).toEpochSecond();
+
+        // 覆盖 Redis 秒杀数据（同一 voucherId 重复上架时先清 owners，避免脏资格）
+        stringRedisTemplate.delete(RedisConstants.SECKILL_OWNERS_KEY + vid);
+        stringRedisTemplate.opsForValue().set(RedisConstants.SECKILL_STOCK_KEY + vid, voucher.getStock().toString());
+        String infoKey = RedisConstants.SECKILL_INFO_KEY + vid;
+        stringRedisTemplate.opsForHash().put(infoKey, "begin", Long.toString(beginEpoch));
+        stringRedisTemplate.opsForHash().put(infoKey, "end", Long.toString(endEpoch));
     }
 }

@@ -15,4 +15,6 @@ public class MessageConstants {
     public static final String SAVE_VOUCHER_FAIL = "秒杀券扣减失败";
     public static final String VOUCHER_OUT_OF_TIME = "活动无效";
     public static final String LOCK_FAIL = "获取锁失败";
+    /** Redis 缺少秒杀缓存或未预热（库存/info） */
+    public static final String SECKILL_NOT_READY = "秒杀未就绪";
 }
