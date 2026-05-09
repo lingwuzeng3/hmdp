@@ -43,7 +43,8 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
         //2.若redis中有,返回数据，商店类型永久存在不用刷新
         if(StrUtil.isNotEmpty(shopTypeStr)){
             List<ShopType> shopTypeList = new ArrayList<>();
-            String[] split = shopTypeStr.split(";");
+            // 兼容当前缓存写法：多个JSON对象直接拼接，按 "}{"
+            String[] split = shopTypeStr.split("(?<=\\})(?=\\{)");
             for(String s : split){
                 shopTypeList.add(JSONUtil.toBean(s, ShopType.class));
             }

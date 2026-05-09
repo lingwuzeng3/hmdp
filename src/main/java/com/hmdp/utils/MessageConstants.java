@@ -14,4 +14,5 @@ public class MessageConstants {
     public static final String STOCK_IS_NOT_ENOUGH = "库存不够了";
     public static final String SAVE_VOUCHER_FAIL = "秒杀券扣减失败";
     public static final String VOUCHER_OUT_OF_TIME = "活动无效";
+    public static final String LOCK_FAIL = "获取锁失败";
 }

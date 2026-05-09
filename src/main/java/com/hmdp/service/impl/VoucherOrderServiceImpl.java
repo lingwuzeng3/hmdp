@@ -50,6 +50,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     public Result robseckillVoucher(Long voucherId) {
         //1.查询优惠券
         SeckillVoucher voucher = seckillVoucherService.getById(voucherId);
+        if(voucher == null){
+            return Result.fail("优惠券不存在");
+        }
         if(voucher.getStock() < 1){
             return Result.fail(MessageConstants.STOCK_IS_NOT_ENOUGH);
         }
@@ -61,8 +64,9 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         //创建订单,用代理来保证嵌套事务的正常运行
         Long userId = UserHolder.getUser().getId();
 
-        // 使用voucherId作为锁的key，而不是userId，确保对同一张券的互斥访问
-        String lockKey = "lock:order:" + voucherId;
+        // 使用 userId + voucherId 作为锁的key，确保同一用户对同一券的互斥访问
+        // 这样可以防止同一用户重复下单，同时不同用户可以并发抢券
+        String lockKey = "lock:order:" + userId + ":" + voucherId;
         RLock lock = redissonClient.getLock(lockKey);
         
         // 尝试获取锁，设置等待时间和租约时间
@@ -94,16 +98,17 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Transactional
     public Result createVoucherOrder(Long userId,Long voucherId) {
         //2.判断是否第一单，一个用户同种券只能抢一张
-
         int cnt = count(new QueryWrapper<VoucherOrder>().eq("user_id",userId).eq("voucher_id",voucherId));
         if(cnt > 0){
             return Result.fail(MessageConstants.REPEAT_BUY);
         }
 
-        //3.更新库存
+        //3.更新库存 - 使用乐观锁机制，确保原子性扣减
         boolean flag = seckillVoucherService.update(
                 new UpdateWrapper<SeckillVoucher>()
-                        .eq("voucher_id", voucherId).gt("stock",0).setSql("stock = stock - 1")
+                        .eq("voucher_id", voucherId)
+                        .gt("stock", 0)  // 库存必须大于0才能扣减
+                        .setSql("stock = stock - 1")
         );
         if (!flag){
             return Result.fail(MessageConstants.STOCK_IS_NOT_ENOUGH);

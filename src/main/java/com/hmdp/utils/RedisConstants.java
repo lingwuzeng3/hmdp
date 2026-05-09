@@ -24,4 +24,6 @@ public class RedisConstants {
     public static final String REQUEST_HEADER_TOKEN = "authorization";
     public static final String CACHE_SHOP_TYPE_KEY = "cache:shopType:list";
 
+    public static final String SECKILL_STACK_KEY = "seckill:stack";
+
 }
