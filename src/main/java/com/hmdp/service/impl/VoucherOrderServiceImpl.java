@@ -94,7 +94,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Override
     @Transactional
     public Result createVoucherOrder(Long userId, Long voucherId, Long orderId) {
-        int cnt = count(new QueryWrapper<VoucherOrder>().eq("user_id", userId).eq("voucher_id", voucherId));
+        long cnt = count(new QueryWrapper<VoucherOrder>().eq("user_id", userId).eq("voucher_id", voucherId));
         if (cnt > 0) {
             return Result.fail(MessageConstants.REPEAT_BUY);
         }

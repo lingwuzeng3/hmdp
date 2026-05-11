@@ -1,0 +1,555 @@
+openapi: 3.0.3
+info:
+  title: HM Dianping API
+  version: 1.0.0
+  description: |
+    黑马点评后端接口文档。前端通过 Nginx `/api` 代理访问后端，实际后端 Controller 路径不包含 `/api`。
+    需要登录的接口通过请求头 `authorization` 传递登录 token。
+servers:
+  - url: http://localhost:8080/api
+    description: Nginx frontend proxy
+  - url: http://localhost:8081
+    description: Spring Boot backend
+tags:
+  - name: User
+    description: 用户、登录、登出
+  - name: Shop
+    description: 商户
+  - name: ShopType
+    description: 商户类型
+  - name: Blog
+    description: 探店笔记
+  - name: Upload
+    description: 文件上传
+  - name: Voucher
+    description: 优惠券
+  - name: VoucherOrder
+    description: 优惠券下单
+  - name: Follow
+    description: 关注接口目前 Controller 仅保留前缀，HTTP 方法尚未实现
+
+paths:
+  /user/code:
+    post:
+      tags: [User]
+      summary: 发送短信验证码
+      parameters:
+        - $ref: '#/components/parameters/Phone'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /user/login:
+    post:
+      tags: [User]
+      summary: 手机验证码登录
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginFormDTO'
+      responses:
+        '200':
+          description: 登录成功时 data 为 token 字符串
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+
+  /user/logout:
+    post:
+      tags: [User]
+      summary: 登出
+      security:
+        - tokenAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /user/me:
+    get:
+      tags: [User]
+      summary: 查询当前登录用户
+      security:
+        - tokenAuth: []
+      responses:
+        '200':
+          description: 当前用户
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UserDTO'
+
+  /user/info/{id}:
+    get:
+      tags: [User]
+      summary: 查询用户详情
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /shop/{id}:
+    get:
+      tags: [Shop]
+      summary: 根据 id 查询商户
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /shop:
+    post:
+      tags: [Shop]
+      summary: 新增商户
+      security:
+        - tokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Shop'
+      responses:
+        '200':
+          description: data 为新增商户 id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+    put:
+      tags: [Shop]
+      summary: 更新商户
+      security:
+        - tokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Shop'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /shop/of/type:
+    get:
+      tags: [Shop]
+      summary: 按商户类型分页查询
+      parameters:
+        - name: typeId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/Current'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /shop/of/name:
+    get:
+      tags: [Shop]
+      summary: 按名称搜索商户
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Current'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /shop-type/list:
+    get:
+      tags: [ShopType]
+      summary: 查询商户类型列表
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /blog:
+    post:
+      tags: [Blog]
+      summary: 发布探店笔记
+      security:
+        - tokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Blog'
+      responses:
+        '200':
+          description: data 为新增笔记 id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+
+  /blog/like/{id}:
+    put:
+      tags: [Blog]
+      summary: 点赞或取消点赞
+      description: 未点赞时点赞并写入 Redis ZSet；已点赞时取消点赞并移除 ZSet。
+      security:
+        - tokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /blog/likes/{id}:
+    get:
+      tags: [Blog]
+      summary: 查询博客点赞排行榜
+      description: 返回最早点赞的前 5 个用户。
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: data 为 UserDTO 列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Result'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/UserDTO'
+
+  /blog/of/me:
+    get:
+      tags: [Blog]
+      summary: 查询我的笔记
+      security:
+        - tokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Current'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /blog/hot:
+    get:
+      tags: [Blog]
+      summary: 查询热门笔记
+      description: 该接口允许未登录访问；未登录时 `isLike` 返回 false。
+      parameters:
+        - $ref: '#/components/parameters/Current'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /blog/{id}:
+    get:
+      tags: [Blog]
+      summary: 根据 id 查询笔记详情
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /upload/blog:
+    post:
+      tags: [Upload]
+      summary: 上传博客图片
+      security:
+        - tokenAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: data 为图片相对路径，如 blogs/1/2/xxx.jpg
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+
+  /upload/blog/delete:
+    get:
+      tags: [Upload]
+      summary: 删除博客图片
+      security:
+        - tokenAuth: []
+      parameters:
+        - name: name
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /voucher:
+    post:
+      tags: [Voucher]
+      summary: 新增普通券
+      security:
+        - tokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Voucher'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /voucher/seckill:
+    post:
+      tags: [Voucher]
+      summary: 新增秒杀券
+      security:
+        - tokenAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Voucher'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /voucher/list/{shopId}:
+    get:
+      tags: [Voucher]
+      summary: 查询店铺优惠券列表
+      parameters:
+        - name: shopId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+  /voucher-order/seckill/{id}:
+    post:
+      tags: [VoucherOrder]
+      summary: 秒杀下单
+      description: 成功时 data 为预生成的订单 id；后端通过 Lua + Redis Stream 异步落库。
+      security:
+        - tokenAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Result'
+
+components:
+  securitySchemes:
+    tokenAuth:
+      type: apiKey
+      in: header
+      name: authorization
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    Current:
+      name: current
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 1
+    Phone:
+      name: phone
+      in: query
+      required: true
+      schema:
+        type: string
+        example: "13800138000"
+
+  responses:
+    Result:
+      description: 统一响应包装
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Result'
+
+  schemas:
+    Result:
+      type: object
+      properties:
+        success:
+          type: boolean
+        errorMsg:
+          type: string
+          nullable: true
+        data:
+          nullable: true
+        total:
+          type: integer
+          format: int64
+          nullable: true
+
+    LoginFormDTO:
+      type: object
+      properties:
+        phone:
+          type: string
+        code:
+          type: string
+        password:
+          type: string
+      required:
+        - phone
+
+    UserDTO:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        nickName:
+          type: string
+        icon:
+          type: string
+
+    Shop:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        typeId:
+          type: integer
+          format: int64
+        images:
+          type: string
+        area:
+          type: string
+        address:
+          type: string
+        x:
+          type: number
+          format: double
+        y:
+          type: number
+          format: double
+        avgPrice:
+          type: integer
+        sold:
+          type: integer
+        comments:
+          type: integer
+        score:
+          type: integer
+        openHours:
+          type: string
+
+    Blog:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        shopId:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+          format: int64
+          readOnly: true
+        icon:
+          type: string
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        isLike:
+          type: boolean
+          readOnly: true
+        title:
+          type: string
+        images:
+          type: string
+          description: 逗号分隔的图片路径
+        content:
+          type: string
+        liked:
+          type: integer
+          readOnly: true
+        comments:
+          type: integer
+          readOnly: true
+        createTime:
+          type: string
+          format: date-time
+          readOnly: true
+        updateTime:
+          type: string
+          format: date-time
+          readOnly: true
+
+    Voucher:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        shopId:
+          type: integer
+          format: int64
+        title:
+          type: string
+        subTitle:
+          type: string
+        rules:
+          type: string
+        payValue:
+          type: integer
+        actualValue:
+          type: integer
+        type:
+          type: integer
+          description: 0 普通券，1 秒杀券
+        stock:
+          type: integer
+          description: 秒杀券库存
+        beginTime:
+          type: string
+          format: date-time
+        endTime:
+          type: string
+          format: date-time
