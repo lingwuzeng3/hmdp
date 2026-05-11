@@ -65,9 +65,12 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         String shopJson = stringRedisTemplate.opsForValue().get(shopKey);
 
         //2.若redis中不存在信息，需要从数据库查询并构建缓存
-        if(StrUtil.isEmpty(shopJson)){
+        if(shopJson == null){
             // 缓存击穿解决：使用互斥锁
             return handleCacheBreakdown(id, shopKey);
+        }
+        if (StrUtil.isBlank(shopJson)) {
+            return Result.fail(MessageConstants.SHOP_NOT_EXIST);
         }
 
         //3.命中 反序列化
@@ -128,8 +131,11 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             
             // 2. 获取锁成功，再次检查缓存（双重检查）
             String cacheData = stringRedisTemplate.opsForValue().get(shopKey);
-            if (StrUtil.isNotEmpty(cacheData)) {
+            if (cacheData != null) {
                 // 其他线程已经重建了缓存
+                if (StrUtil.isBlank(cacheData)) {
+                    return Result.fail(MessageConstants.SHOP_NOT_EXIST);
+                }
                 return buildResultFromCache(cacheData);
             }
             

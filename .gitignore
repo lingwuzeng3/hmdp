@@ -1,5 +1,7 @@
 HELP.md
 target/
+# 默认本地上传根目录（见 hm-dianping.upload.image-dir）
+upload/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

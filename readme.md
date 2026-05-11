@@ -7,7 +7,7 @@
 | 类别 | 说明 |
 |------|------|
 | 框架 | Spring Boot 2.7、Spring Web |
-| 数据 | MySQL、MyBatis-Plus |
+| 数据 | MySQL（`mysql-connector-j` 8.x、`com.mysql.cj.jdbc.Driver`）、MyBatis-Plus |
 | 缓存 / 会话 | Redis（`StringRedisTemplate`、Hash 存登录态；秒杀使用 **Lua 脚本** 与 **Redis Stream**） |
 | 其他 | Hutool、Lombok、AspectJ（`@EnableAspectJAutoProxy`） |
 | JDK | 17（见 `pom.xml`） |
@@ -57,25 +57,12 @@ hm-dianping
   - **数据库兜底**：`tb_voucher_order` 对 `(user_id, voucher_id)` 建立唯一索引，与一人一单语义一致。  
   - **运维**：可用 `SeckillStockRedisSyncTest` 将库表库存同步到 Redis `seckill:stock:*`（与 Lua 扣减对齐）。
 - **笔记**：发布、点赞数自增、我的笔记、热门笔记（热门列表会按 `user_id` 回填昵称/头像）。
-- **上传**：笔记图片上传与删除（本地目录见 `SystemConstants.IMAGE_UPLOAD_DIR`）。
+- **上传**：笔记图片上传与删除（本地根目录见 `SystemConstants.IMAGE_UPLOAD_DIR`）。
 
 ### 未实现 / 仅骨架
 
 - `FollowController`、`BlogCommentsController`：无接口方法，仅有 `RequestMapping` 前缀；对应 `IFollowService`、`IBlogCommentsService` 为 MyBatis-Plus 默认实现，**关注、评论相关业务未接 HTTP**。
 - **课程后续章节**（若视频/资料中有）：如 Feed 流、附近商户 Geo、签到等，需对照课程与 `RedisConstants` 中预留 key 自行核对是否落地。
-
-## 当前问题与改进建议
-
-- **配置硬编码**：MySQL 账号密码在 `application.yaml`，Redisson 地址写死在 `RedissonConfig`，图片上传路径写死在 `SystemConstants.IMAGE_UPLOAD_DIR`。建议改为配置项或环境变量，区分本地、测试、生产环境。
-- **MySQL 驱动较旧**：当前使用 `mysql-connector-java:5.1.47` 和 `com.mysql.jdbc.Driver`，Java 17 + Spring Boot 2.7 下建议升级 MySQL 8.x 驱动并使用 `com.mysql.cj.jdbc.Driver`。
-- **店铺空值缓存判断有缺陷**：`ShopServiceImpl.queryById` 使用 `StrUtil.isEmpty(shopJson)` 判断未命中，空字符串也会被当成未命中，可能削弱缓存空值防穿透效果。更合理的判断是区分 `null` 未命中和 `""` 空值命中。
-- **商户类型缓存格式不标准**：当前把多个 JSON 对象直接拼接，再通过正则拆分。建议存 JSON 数组，或使用 Redis List / Hash，避免格式脆弱。
-- **秒杀异步一致性**：Redis 已预扣库存且 Stream 已投递，若异步落库失败，可能出现 Redis 与 MySQL 短期不一致；可按业务需要增加失败补偿、重试或人工对账。消费者当前对业务失败也会 ACK，需知悉「不重试失败消息」策略。
-- **博客点赞能力较弱**：当前点赞只是 `liked = liked + 1`，没有重复点赞校验、取消点赞，也没有使用 `blog:liked:*` 维护点赞用户集合。
-- **热门笔记**：`tb_blog.user_id` 必须在 `tb_user` 中存在，否则回填用户时会 NPE；数据需保持一致。
-- **热门笔记存在 N+1 查询**：查询热门博客后逐条查用户，数据量增大后性能会下降。可考虑联表查询、批量查询用户后组装，或适当缓存用户简要信息。
-- **上传接口安全性不足**：文件删除接口使用 GET，且文件名主要来自请求参数；建议改为受控路径校验、限制文件类型/大小、使用 POST/DELETE，并避免任意路径删除风险。
-- **全局异常返回信息较粗**：`WebExceptionAdvice` 统一返回“服务器异常”，排查问题依赖日志；可以增加业务异常类型和更明确的错误码。
 
 ---
 
@@ -100,7 +87,7 @@ hm-dianping
 
 ### day03
 
-**秒杀券抢购（课程脉络 + 本仓库当前实现）**
+**秒杀券抢购**
 
 1. **全局 ID 生成器**：由时间戳差值 + 当日序列号等组成（Redis 自增），见 `RedisIdWorker`；秒杀在 Lua 调用前即生成 `orderId`，保证接口返回值与 Stream 消息、落库主键一致。
 2. **锁与并发控制（课程）**：乐观锁 / 悲观锁 / `synchronized` 局限；集群下可用 **Redisson `RLock`** 做「用户 + 券」维度互斥（课程方案）。  
@@ -109,7 +96,19 @@ hm-dianping
 4. **Redis Stream 异步下单**（`SeckillOrderConsumer`）：消费组阻塞读取，调用 `IVoucherOrderService#createVoucherOrder(userId, voucherId, orderId)` 落库后 ACK，HTTP 线程只做预占与返回 `orderId`。
 5. **落库层**：异步阶段仍对 `tb_seckill_voucher` 使用 **`stock > 0` 条件更新**（乐观锁式扣减），订单表辅以 **`(user_id, voucher_id)` 唯一约束**。
 
-## 运行提示
+### day04
 
-- 配置 MySQL、Redis 连接（`src/main/resources` 下配置文件）。
+**blog发布模块**
+1. 添加了 **图片上传**，并配置了 **本地存储**。
+2. 新增/整理了笔记相关查询：`GET /blog/hot` 查询热门笔记，`GET /blog/{id}` 查询笔记详情，`GET /blog/of/me` 查询我的笔记。
+3. `GET /blog/hot` 已放行登录拦截；
+4. 未登录用户查询热门笔记时，`isLike` 默认返回 `false`，避免 `UserHolder.getUser()` 为空导致异常。
+
+**点赞模块**  
+1. 使用 Redis ZSet 维护博客点赞用户：key 为 `blog:liked:{blogId}`，member 为 `userId`，score 为点赞时间戳。
+2. 点赞接口 `PUT /blog/like/{id}` 支持重复点击切换：未点赞则 `liked + 1` 并写入 ZSet；已点赞则 `liked - 1` 并从 ZSet 移除。
+3. 使用 `opsForZSet().score(...)` 判断当前登录用户是否已点赞，替代普通 Set 的 `isMember` 判断。
+4. 新增点赞排行榜接口 `GET /blog/likes/{id}`，默认查询前 5 个最早点赞的用户。
+5. 排行榜查询 Redis 后，再通过 `ORDER BY FIELD(id,...)` 按 Redis 返回顺序回填 `UserDTO`，避免数据库 `IN` 查询打乱顺序。
+
 - 数据表与课程 SQL 一致时使用实体上的 `tb_*` 表名；若自行改表，需保证外键语义与代码一致（如 `tb_blog.user_id` → `tb_user.id`）。

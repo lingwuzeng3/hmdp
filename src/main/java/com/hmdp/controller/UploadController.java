@@ -53,11 +53,11 @@ public class UploadController {
         int d1 = hash & 0xF;
         int d2 = (hash >> 4) & 0xF;
         // 判断目录是否存在
-        File dir = new File(SystemConstants.IMAGE_UPLOAD_DIR, StrUtil.format("/blogs/{}/{}", d1, d2));
+        File dir = new File(SystemConstants.IMAGE_UPLOAD_DIR, StrUtil.format("blogs/{}/{}", d1, d2));
         if (!dir.exists()) {
             dir.mkdirs();
         }
-        // 生成文件名
-        return StrUtil.format("/blogs/{}/{}/{}.{}", d1, d2, name, suffix);
+        // 生成文件名（相对 IMAGE_UPLOAD_DIR，避免以 / 开头导致忽略父目录）
+        return StrUtil.format("blogs/{}/{}/{}.{}", d1, d2, name, suffix);
     }
 }
