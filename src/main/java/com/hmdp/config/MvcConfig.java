@@ -2,11 +2,15 @@ package com.hmdp.config;
 
 import com.hmdp.utils.LoginInterceptor;
 import com.hmdp.utils.RefreshInterceptor;
+import com.hmdp.utils.SystemConstants;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import java.nio.file.Paths;
 
 /**
  * 包名：com.hmdp.config
@@ -30,6 +34,7 @@ public class MvcConfig implements WebMvcConfigurer {
                         "/voucher/**",
                         "/shop-type/**",
                         "/upload/**",
+                        "/imgs/**",
                         "/blog/hot",
                         "/user/code",
                         "/user/login"
@@ -38,6 +43,15 @@ public class MvcConfig implements WebMvcConfigurer {
         registry.addInterceptor(new RefreshInterceptor(stringRedisTemplate))
                 .addPathPatterns("/**")// 所有请求都要进入该拦截器
                 .order(0);// 保证该拦截器先执行
+    }
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        String location = Paths.get(SystemConstants.IMAGE_UPLOAD_DIR).toAbsolutePath().normalize().toUri().toString();
+        if (!location.endsWith("/")) {
+            location += "/";
+        }
+        registry.addResourceHandler("/imgs/**").addResourceLocations(location);
     }
 
 }

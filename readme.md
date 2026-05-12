@@ -56,13 +56,13 @@ hm-dianping
   - **Redis 预热**：上架秒杀券时 `VoucherServiceImpl` 写入 `stock`、`seckill:info:{id}`（`begin`/`end` Unix 秒）、并清理 `owners`，避免重复上架脏数据；请求侧 `ensureSeckillRedisPresent` 可在缓存缺失时从库表补齐。  
   - **数据库兜底**：`tb_voucher_order` 对 `(user_id, voucher_id)` 建立唯一索引，与一人一单语义一致。  
   - **运维**：可用 `SeckillStockRedisSyncTest` 将库表库存同步到 Redis `seckill:stock:*`（与 Lua 扣减对齐）。
-- **笔记**：发布、点赞数自增、我的笔记、热门笔记（热门列表会按 `user_id` 回填昵称/头像）。
+- **笔记**：发布、点赞数自增、我的笔记、热门笔记（热门列表会按 `user_id` 回填昵称/头像）；**关注动态** `GET /blog/of/follow`（Feed 收件箱，见课程笔记 day05）。
 - **上传**：笔记图片上传与删除（本地根目录见 `SystemConstants.IMAGE_UPLOAD_DIR`）。
+- **好友关注**：关注/取关、是否关注、共同关注（`FollowController` + `FollowServiceImpl`，Redis Set + `tb_follow` 双写）；与笔记发布联动 Feed（`BlogServiceImpl#saveBlog`）。
 
 ### 未实现 / 仅骨架
 
-- `FollowController`、`BlogCommentsController`：无接口方法，仅有 `RequestMapping` 前缀；对应 `IFollowService`、`IBlogCommentsService` 为 MyBatis-Plus 默认实现，**关注、评论相关业务未接 HTTP**。
-- **课程后续章节**（若视频/资料中有）：如 Feed 流、附近商户 Geo、签到等，需对照课程与 `RedisConstants` 中预留 key 自行核对是否落地。
+- **课程其他扩展**：附近商户 Geo、签到等，可对照 `RedisConstants`（如 `SHOP_GEO_KEY`、`USER_SIGN_KEY`）与代码自行核对是否落地。
 
 ---
 
@@ -111,4 +111,12 @@ hm-dianping
 4. 新增点赞排行榜接口 `GET /blog/likes/{id}`，默认查询前 5 个最早点赞的用户。
 5. 排行榜查询 Redis 后，再通过 `ORDER BY FIELD(id,...)` 按 Redis 返回顺序回填 `UserDTO`，避免数据库 `IN` 查询打乱顺序。
 
-- 数据表与课程 SQL 一致时使用实体上的 `tb_*` 表名；若自行改表，需保证外键语义与代码一致（如 `tb_blog.user_id` → `tb_user.id`）。
+### day05
+
+**好友关注与 Feed**
+
+1. **关注关系双写**：`tb_follow` 与 Redis Set **`follow:{userId}`**（member 为被关注用户 id）；`PUT /follow/{id}/{isFollow}` 关注/取关，`GET /follow/or/not/{id}` 查是否关注（本实现走库表 count）。
+2. **共同关注**：`GET /follow/common/{id}` 对两个用户的 **`follow:`** Set 做 **`SINTER`**，再查用户列表返回 `UserDTO`。
+3. **推模式收件箱**：笔记 **`saveBlog`** 成功后，向所有粉丝的 **`feed:{粉丝id}`** ZSet **`ZADD`** `blogId`，score 用 **`System.currentTimeMillis()`** 做时间线。
+4. **关注动态**：`GET /blog/of/follow`，按 ZSet 分数倒序取笔记 id，批量查 `Blog` 并回填作者与是否点赞。
+5. **滚动分页**：`lastId` + `offset` 配合返回的 **`ScrollResult`**（`minTime`、`offset`），处理同一时间戳多条笔记，避免漏翻。

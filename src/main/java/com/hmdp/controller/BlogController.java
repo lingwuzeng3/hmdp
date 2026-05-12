@@ -8,6 +8,7 @@ import com.hmdp.entity.Blog;
 import com.hmdp.service.IBlogService;
 import com.hmdp.utils.SystemConstants;
 import com.hmdp.utils.UserHolder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -25,18 +26,16 @@ import java.util.List;
 @RequestMapping("/blog")
 public class BlogController {
 
-    @Resource
-    private IBlogService blogService;
+    private final IBlogService blogService;
+
+    @Autowired
+    public BlogController(IBlogService blogService){
+        this.blogService = blogService;
+    }
 
     @PostMapping
     public Result saveBlog(@RequestBody Blog blog) {
-        // 获取登录用户
-        UserDTO user = UserHolder.getUser();
-        blog.setUserId(user.getId());
-        // 保存探店博文
-        blogService.save(blog);
-        // 返回id
-        return Result.ok(blog.getId());
+        return blogService.saveBlog(blog);
     }
 
     @PutMapping("/like/{id}")
@@ -80,5 +79,10 @@ public class BlogController {
     @GetMapping("/{id}")
     public Result queryBlogById(@PathVariable("id") Long id) {
         return blogService.queryBlogById(id);
+    }
+
+    @GetMapping("of/follow")
+    public Result queryBlogOfFollow(@RequestParam("lastId") Long max,@RequestParam(value="offset", defaultValue = "0") Integer offset){
+        return blogService.queryBlogOfFollow(max,offset);
     }
 }
